@@ -317,6 +317,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseTerminatedStatement = function() {
 		var s = parseStatement();
+		debugger;
     	if (!isTerminal(s)) { checkSemicolon(); }
     	return s;
 	}
@@ -351,6 +352,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	}
 
 	var parseStatementWithoutLabel = function() {
+		debugger;
 		var token = tq.peek();
 		if (tokenType.KEYWORD == token.type) {
 			var s;
@@ -368,6 +370,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          			var cond = parseExpression(false);
 	          			tq.expectToken(punctuation.RPAREN);
 	          			var body = parseBody();
+	          			debugger;
 	          			sawElse = tq.checkToken('else');
 	          			var ifClause = new ifClauseStatement(cond, body);
 	          			clauses.push(ifClause);
@@ -392,8 +395,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          			var params = parseFormalParams();
 	          			tq.expectToken(punctuation.RPAREN);
 	          			var body = parseFunctionBody();
-	          			var fc = new functionConstructor(idfNode.name, params, body);
-	          			s = new functionDeclaration(fc);
+	          			//var fc = new functionConstructor(idfNode.name, params, body);
+	          			s = new functionDeclaration(idfNode.name, params, body);
 	          		}
 	          		break;
 	          	}
@@ -528,8 +531,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseSwitchStmt = function() {
 		tq.expectToken(punctuation.LPAREN);
 		var switchValue = parseExpression(false);
-		tq.expectToken(Punctuation.RPAREN);
-        tq.expectToken(Punctuation.LCURLY);
+		tq.expectToken(punctuation.RPAREN);
+        tq.expectToken(punctuation.LCURLY);
         var cases = [];
         while (!tq.checkToken(punctuation.RCURLY)) {
         	var caseValue = null;
@@ -580,8 +583,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			var initializer = new noopStatement();
 			var condition = parseExpressionOrNoop(false);
 			var increment;
-			if (!tq.checkToken(Punctuation.RPAREN)) {
+			if (!tq.checkToken(punctuation.RPAREN)) {
 				increment = parseExpression(false);
+				tq.expectToken(punctuation.RPAREN);
 			} else {
 				increment = new noopStatement();
 			}
@@ -591,12 +595,12 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			var initializer = parseDeclarationsOrExpression(false);
 			if (tq.checkToken('in')) {
 				var iterable = parseExpression(false);
-				tq.expectToken(Punctuation.RPAREN);
+				tq.expectToken(punctuation.RPAREN);
 				var body = parseBody();
 				e = new forInStatement(initializer, iterable, body);
 			} else if(tq.checkToken('of')){
 				var iterable = parseExpression(false);
-				tq.expectToken(Punctuation.RPAREN);
+				tq.expectToken(punctuation.RPAREN);
 				var body = parseBody();
 				e = new forOfStatement(initializer, iterable, body);
 			} else {
@@ -665,19 +669,24 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseBody = function() {
 		var s;
 		debugger;
+		var stmts = [];
 		var requireBrackets = tq.lookaheadToken(punctuation.LCURLY);
+		//存在花括号
 		if (requireBrackets) {
 			tq.expectToken(punctuation.LCURLY);
-		}
-		var stmts = [];
-		while (!tq.isEmpty() && !tq.lookaheadToken(punctuation.RCURLY)) {
-			stmts.push(parseTerminatedStatement());
-		}
-		s = new blockStatement(stmts);
-		if (requireBrackets) {
+			while (!tq.isEmpty() && !tq.lookaheadToken(punctuation.RCURLY)) {
+				stmts.push(parseTerminatedStatement());
+			}
+			s = new blockStatement(stmts);
 			tq.expectToken(punctuation.RCURLY);
+			return s;
+		} else {
+			if (!tq.isEmpty()) {
+				stmts.push(parseTerminatedStatement());
+			}
+			s = new blockStatement(stmts);
+			return s;
 		}
-		return s;
 	}
 
 	var parseExpressionOrNoop = function(insertCommaAllowed) {
@@ -717,7 +726,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		var left = null;
 		var token = tq.peek();
 		var opprec;
-
 		if (operatorType.PREFIX[token.value] !== undefined) {
 			var op = token;
 			//handl prefix operator
@@ -739,7 +747,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				}
 				left = new newExpression(currCallee, operands);
 			} else {
-		        left = new prefixExpression(op.value, operand); ///Operation.create(posFrom(m), op, left);
+		        left = new prefixExpression(op.value, left); ///Operation.create(posFrom(m), op, left);
 			}
 		}
 		if (left == null) {
@@ -822,7 +830,20 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			} else if ((operatorType.POSTFIX)[op.value]) {
 				left = new postfixExpression(op.value, left);
 			} else if ((operatorType.INFIX)[op.value]) {
-				left = new binaryExpression(op.value, left, right);
+				if(op.value == punctuation.COMMA) {
+					if (left.type == 'sequenceExpression') {
+						left.append(right);
+					} else {
+						var se = new sequenceExpression();
+						se.append(left);
+						se.append(right);
+						left = se;
+					}
+				} else if(op.value == punctuation.EQ) {
+					left = new assignmentExpression(op.value, left, right);
+				} else {
+					left = new binaryExpression(op.value, left, right);
+				}
 			} else {
 				parse_error('parse_error!');
 			}
@@ -834,6 +855,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseExpressionAtom = function() {
 		var e;
 		var token = tq.peek();
+		debugger;
 		typeswitch: switch (token.type) {
 			case tokenType.STRING:
 				e = new stringLiteral(token.value);
@@ -869,10 +891,12 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
               				idf = parseIdentifierNode(false);
               			} else {
               				idf = new identifier(null);
+              				tq.advance();
               			}
-              			tq.expectToken(Punctuation.LPAREN);
+              			debugger;
+              			tq.expectToken(punctuation.LPAREN);
               			var params = parseFormalParams();
-              			tq.expectToken(Punctuation.RPAREN);
+              			tq.expectToken(punctuation.RPAREN);
               			var body = parseFunctionBody();
               			e = new functionConstructor(idf.name, params, body);
               			break typeswitch;
@@ -882,6 +906,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				}
 			}
 			case tokenType.NAME: {
+				debugger;
 				var idfName;
 				if ("this" == token.value) {
 					idfName = "this";
@@ -896,6 +921,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			case tokenType.PUNCTUATION: {
 				switch (token.value) {
 					case punctuation.LPAREN:
+						tq.expectToken(punctuation.LPAREN);
 						e = parseExpression(false);
 						tq.expectToken(punctuation.RPAREN);
 						return e;
@@ -919,16 +945,29 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 					}
 					case punctuation.LCURLY: {
 						var properties = [];
+						tq.advance();
 						if (!tq.checkToken(punctuation.RCURLY)) {
 							var sawComma;
 							do {
+								var prop = null;
 								token = tq.peek();
-								// if (token.type == tokenType.NAME) {
-								// 	if ("get" == token.value ||
-								// 		"set" == token.value) {
-								// 		tq.advance();
-								// 	}
-								// }
+								debugger;
+								if (token.type == tokenType.NAME) {
+									if ("get" == token.value ||
+										"set" == token.value) {
+										tq.advance();
+										if (!tq.checkToken(punctuation.COLON)) {
+											//处理gretter 和 setter
+											if ("get" == token.value) {
+												prop = new getterProperty();
+											} else {
+												prop = new setterProperty();
+											}
+										} else {
+											tq.rewind();
+										}
+									}
+								}
 								var key;
 								switch (token.type) {
 									case tokenType.STRING:
@@ -944,10 +983,22 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 										key = new stringLiteral(ident);
 										break;
 								}
-								tq.expectToken(punctuation.COLON);
-								var propertyType;
-								var value = parseExpression(false); // = parseExpression(false); 此处有可能是表达式, 也有可能是函数
-								var prop = new objectProperty(key, value);
+								if (prop == null) {
+									debugger;
+									tq.expectToken(punctuation.COLON);
+									var value = parseExpression(false);
+									prop = new objectProperty(key, value);
+								} else {
+
+									//处理getter和setter的情况
+									tq.expectToken(punctuation.LPAREN);
+									var params = parseFormalParams();
+									tq.expectToken(punctuation.RPAREN);
+									var body = parseFunctionBody();
+									var fn = new functionConstructor(key.value, params, body);
+									prop.setKey(key.value);
+									prop.setValue(fn);
+								}
 								properties.push(prop);
 								sawComma = tq.checkToken(punctuation.COMMA);
 								if (sawComma && tq.lookaheadToken(punctuation.RCURLY)) {
@@ -956,6 +1007,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 								}
 							} while (sawComma);
 						}
+						tq.expectToken(punctuation.RCURLY);
 						e = new objectConstructor(properties);
             			break;
 					}
@@ -982,7 +1034,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			do {
 		        var param = new formalParam(parseIdentifier(false));
 		        params.push(param);
-		    } while (tq.checkToken(Punctuation.COMMA));
+		    } while (tq.checkToken(punctuation.COMMA));
 		}
 		return params;
 	}
@@ -1048,7 +1100,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			//label 语句是不需要{}来包裹的
 	        return isTerminal((stmt.body)[0]);
 	    }
-	    return stmt instanceof forStatement
+	    return stmt instanceof forStatement  || stmt instanceof conditionalStmt
             || stmt instanceof forInStatement || stmt instanceof whileStatement
             || stmt instanceof forOfStatement || stmt instanceof tryStatement
             || stmt instanceof switchStatement
@@ -1101,7 +1153,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		//关于exigent_mode的判断还有待处理
 		return !exigent_mode && (
 			//nlb means new_line_before
-            tq.peek().nlb || tq.isEmpty() || tq.expectToken(punctuation.RCURLY)
+            tq.peek().nlb || tq.isEmpty() || tq.lookaheadToken(punctuation.RCURLY)
         );
 	}
 
@@ -1202,7 +1254,7 @@ var doWhileStmt = function(body, cond) {
 
 var expressionStmt = function(exp) {
 	this.type = 'expressionStatement';
-	this.exp = exp;
+	this.expression = exp;
 }
 
 var caseStatement = function(cond, body) {
@@ -1291,6 +1343,30 @@ var formalParam = function(name) {
 	this.name = name;
 }
 
+var getterProperty = function(key, fn) {
+	this.type = 'getterProperty';
+	this.key = key;
+	this.value = fn;
+	this.setKey = function(key) {
+		this.key = key;
+	}
+	this.setValue = function(fn) {
+		this.function = fn;
+	}
+}
+
+var setterProperty = function(key, fn) {
+	this.type = 'setterProperty';
+	this.key = key;
+	this.value = fn;
+	this.setKey = function(key) {
+		this.key = key;
+	}
+	this.setValue = function(fn) {
+		this.function = fn;
+	}
+}
+
 var identifier = function(name) {
 	this.type = "identifier";
 	this.name = name;
@@ -1309,14 +1385,17 @@ var multiDeclarations = function(decls) {
 
 var functionConstructor = function(name, params, body) {
 	this.type = "functionConstructor";
+	this.name = name;
 	this.params = params;
 	this.body = body;
 
 }
 
-var functionDeclaration = function(fc) {
+var functionDeclaration = function(name, params, body) {
 	this.type = 'functionDeclaration';
-	this.functionDecl = fc;
+	this.name = name;
+	this.params = params;
+	this.body = body;
 }
 
 var arrayConstructor = function(elements) {
@@ -1358,6 +1437,13 @@ var prefixExpression = function(op, operand) {
 	this.operand = operand;
 }
 
+var assignmentExpression = function(op, left, right) {
+	this.type = 'assignmentExpression';
+	this.operator = op;
+	this.left = left;
+	this.right = right;
+}
+
 var binaryExpression = function(op, left, right) {
 	this.type = 'binaryExpression';
 	this.operator = op;
@@ -1394,8 +1480,17 @@ var memberExpression = function(op, left, right) {
 
 var sequenceExpression = function(exps) {
 	this.type = 'sequenceExpression';
-	this.expressions = exps;
+	this.expressions = exps || [];
+	this.append = function(exp) {
+		this.expressions.push(exp);
+		return this.expressions;
+	}
 }
+
+// sequenceExpression.prototype.append = function(exp) {
+// 	this.expressions.push(exp);
+// 	return this.expressions;
+// }
 
 var operatorType = {
 	PREFIX  : array_to_hash(["new", "delete", "void", "typeof", "++", "--", "+", "-", "~", "!"]),

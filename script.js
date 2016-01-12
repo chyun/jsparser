@@ -1,6 +1,6 @@
 var rf = require("fs");
 var parser = require('./parser.js').parser;
-var data = rf.readFileSync("whilestmt.js","utf-8");
+var data = rf.readFileSync("test/infinite.js","utf-8");
 
 var parser = new parser(data);
 
