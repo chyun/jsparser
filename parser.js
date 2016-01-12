@@ -317,7 +317,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseTerminatedStatement = function() {
 		var s = parseStatement();
-		debugger;
     	if (!isTerminal(s)) { checkSemicolon(); }
     	return s;
 	}
@@ -352,7 +351,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	}
 
 	var parseStatementWithoutLabel = function() {
-		debugger;
 		var token = tq.peek();
 		if (tokenType.KEYWORD == token.type) {
 			var s;
@@ -370,7 +368,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          			var cond = parseExpression(false);
 	          			tq.expectToken(punctuation.RPAREN);
 	          			var body = parseBody();
-	          			debugger;
 	          			sawElse = tq.checkToken('else');
 	          			var ifClause = new ifClauseStatement(cond, body);
 	          			clauses.push(ifClause);
@@ -660,7 +657,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	}
 
 	var parseExpressionStmt = function(insertCommaAllowed) {
-		debugger;
 		var e = parseExpression(insertCommaAllowed);
 		var es = new expressionStmt(e);
 		return es;
@@ -668,7 +664,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseBody = function() {
 		var s;
-		debugger;
 		var stmts = [];
 		var requireBrackets = tq.lookaheadToken(punctuation.LCURLY);
 		//存在花括号
@@ -886,14 +881,15 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
               			break typeswitch;
 
               		case "function": {
+              			tq.advance();
               			var idf;
+              			debugger;
               			if (!tq.isEmpty() && tokenType.NAME == tq.peek().type) {
               				idf = parseIdentifierNode(false);
               			} else {
               				idf = new identifier(null);
-              				tq.advance();
               			}
-              			debugger;
+              			
               			tq.expectToken(punctuation.LPAREN);
               			var params = parseFormalParams();
               			tq.expectToken(punctuation.RPAREN);
@@ -906,7 +902,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				}
 			}
 			case tokenType.NAME: {
-				debugger;
 				var idfName;
 				if ("this" == token.value) {
 					idfName = "this";
@@ -951,7 +946,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 							do {
 								var prop = null;
 								token = tq.peek();
-								debugger;
 								if (token.type == tokenType.NAME) {
 									if ("get" == token.value ||
 										"set" == token.value) {
@@ -984,7 +978,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 										break;
 								}
 								if (prop == null) {
-									debugger;
 									tq.expectToken(punctuation.COLON);
 									var value = parseExpression(false);
 									prop = new objectProperty(key, value);
@@ -1006,8 +999,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 									break;
 								}
 							} while (sawComma);
+							tq.expectToken(punctuation.RCURLY);
 						}
-						tq.expectToken(punctuation.RCURLY);
 						e = new objectConstructor(properties);
             			break;
 					}
