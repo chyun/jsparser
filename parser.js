@@ -754,6 +754,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		}
 		
 		//Parse binary operators, except comma
+		var prevOp = null; //纪录前一个二元操作符
+		var prevOpprec = -1;
+		var op = null;
 		while (!tq.isEmpty()) {
 			token = tq.peek();
 			
@@ -777,8 +780,13 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			if (!(opprec > precedence)) {
 				break;
 			}
-
-			var op = token;
+			debugger;
+			if (prevOpprec == opprec && leftAct[token.value]) {
+				break;
+			}
+			
+			op = token;
+			prevOpprec = opprec; //纪录前一个当前op的优先级
 			tq.advance();  // Consume the operator token
 
 			var right;
@@ -804,7 +812,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				} else if ((operatorType.POSTFIX)[op.value]) {
 					right = null;
 				} else if ((operatorType.TERNARY)[op.value]) {
-					debugger;
 					right = parseExpression(false);
 				} else if (op.value == '.') {
 					right = parseReference(true);
@@ -816,7 +823,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			}
 
 			if ((operatorType.TERNARY)[op.value]) {
-				debugger;
 				tq.expectToken(":");
 				var farRight = parseExpression(false);
 				left = new conditionalExpression(left, right, farRight);
@@ -825,7 +831,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				if (op.value == punctuation.LPAREN) {
 					left = new callExpression(left, right);
 				} else {
-					left = new memberExpression(op, left, right);
+					//左方括号
+					left = new memberExpression('[]', left, right);
 				}
 			} else if ((operatorType.POSTFIX)[op.value]) {
 				left = new postfixExpression(op.value, left);
@@ -841,6 +848,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 					}
 				} else if(op.value == punctuation.EQ) {
 					left = new assignmentExpression(op.value, left, right);
+				} else if (op.value === punctuation.DOT){
+					left = new memberExpression(punctuation.DOT, left, right);
 				} else {
 					left = new binaryExpression(op.value, left, right);
 				}
@@ -852,10 +861,10 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	}
 
+
 	var parseExpressionAtom = function() {
 		var e;
 		var token = tq.peek();
-		debugger;
 		typeswitch: switch (token.type) {
 			case tokenType.STRING:
 				e = new stringLiteral(token.value);
@@ -866,7 +875,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				tq.advance();
 				break;
 			case tokenType.REGEXP:
-				debugger;
 				e = new regexpLiteral(token.value);
 				tq.advance();
 				break;
@@ -889,7 +897,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
               		case "function": {
               			tq.advance();
               			var idf;
-              			debugger;
               			if (!tq.isEmpty() && tokenType.NAME == tq.peek().type) {
               				idf = parseIdentifierNode(false);
               			} else {
@@ -1027,6 +1034,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		return e;
 	}
 
+	//定义对象时会遇到a = {rr: function(){}, pp...}, 若使用parseExpression会将逗号后面的表达式解析成rr的值,因此必须中断,只解析逗号之前的部分
 	var parseExpressionPart = function(insertCommaAllowed) {
     	return parseOp(-1, insertCommaAllowed);
   	}
@@ -1137,7 +1145,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	    		}
 	    	}
 	    	var unquoted = quotedToken.value.substring(
-          		1, quotedToken.value.length() - 1);
+          		0, quotedToken.value.length);
 	    	//TODO:增加解析directive prologue正确性
 	    	var dstm = new directiveStatement(unquoted);
 	    	directives.push(dstm);
@@ -1475,8 +1483,8 @@ var conditionalExpression = function(left, right, farRight) {
 var memberExpression = function(op, left, right) {
 	this.type = 'memberExpression';
 	this.op = op;
-	this.left = left;
-	this.right = right;
+	this.object = left;
+	this.property = right;
 }
 
 
@@ -1566,6 +1574,10 @@ var PRECEDENCE = {
 			 "?":2
 			}
 };
+
+//当前后操作符优先级相等时, 让左边的表达式优先计算
+var leftAct = array_to_hash(["[", ".", "(", "in", "*", "/", "%", "+", "-", "<<", ">>", ">>>", "<", ">", "<=", ">=",
+							 "instanceof", "==", "!=", "===", "!==", "&", "^", "|", "&&", "||", ","]);	
 
 var operator = {
 	lookupOperation   : function(symbol, type) {
