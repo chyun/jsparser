@@ -202,7 +202,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
     };
 
     var parse_error = function (err) {
-        js_error(err, tq.tokline, tq.tokcol, tq.tokpos);
+    	var token = tq.peek();
+        js_error(err, token.line, token.col, token.pos);
     };
 
     var tq = {
@@ -758,7 +759,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			
 			// If it is a binary op then we should consider using it
 			//操作符优先级
-			if ((operatorType.INFIX)[token.value]) {
+			if (punctuation.COMMA == token.value) {
+				break;
+			} else if ((operatorType.INFIX)[token.value]) {
 				opprec = (PRECEDENCE.INFIX)[token.value];
 			} else if ((operatorType.BRACKET)[token.value]) {
 				opprec = (PRECEDENCE.BRACKET)[token.value];
@@ -801,7 +804,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				} else if ((operatorType.POSTFIX)[op.value]) {
 					right = null;
 				} else if ((operatorType.TERNARY)[op.value]) {
-					right = parseExpression(insertCommaAllowed);
+					debugger;
+					right = parseExpression(false);
 				} else if (op.value == '.') {
 					right = parseReference(true);
 				} else {
@@ -812,9 +816,10 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			}
 
 			if ((operatorType.TERNARY)[op.value]) {
+				debugger;
 				tq.expectToken(":");
 				var farRight = parseExpression(false);
-				left = new conditionalExpression(left, right, farRight);  //Operation.create(posFrom(left), op, left, right, farRight);
+				left = new conditionalExpression(left, right, farRight);
 			} else if ((operatorType.BRACKET)[op.value]) {
 				//函数调用的情况,需要解析
 				if (op.value == punctuation.LPAREN) {
@@ -861,6 +866,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				tq.advance();
 				break;
 			case tokenType.REGEXP:
+				debugger;
 				e = new regexpLiteral(token.value);
 				tq.advance();
 				break;
@@ -979,7 +985,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 								}
 								if (prop == null) {
 									tq.expectToken(punctuation.COLON);
-									var value = parseExpression(false);
+									var value = parseExpressionPart(false);
 									prop = new objectProperty(key, value);
 								} else {
 
@@ -1020,6 +1026,10 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		}
 		return e;
 	}
+
+	var parseExpressionPart = function(insertCommaAllowed) {
+    	return parseOp(-1, insertCommaAllowed);
+  	}
 
 	var parseFormalParams = function() {
 		var params = [];
@@ -1455,11 +1465,11 @@ var reference = function(idf) {
 	this.idf = idf;
 }
 
-var conditionalExpression = function(left, right, farWright) {
+var conditionalExpression = function(left, right, farRight) {
 	this.type = "conditionalExpression";
-	this.left = left;
-	this.right = right;
-	this.farRight = farRight;
+	this.test = left;
+	this.consequent = right;
+	this.alternate = farRight;
 }
 
 var memberExpression = function(op, left, right) {
@@ -1491,7 +1501,7 @@ var operatorType = {
   	INFIX   : array_to_hash([".", "in", "*", "/", "%", "+", "-", "<<", ">>", ">>>", "<", ">", "<=", ">=", "instanceof", "==", "!=", "===", "!==",
   							 "&", "^", "|", "&&", "||", "=", "*=", "/=", "%=", "+=", "-=", "<<=", ">>=", ">>>=", "&=", "^=", "|=", ","]),
   	BRACKET : array_to_hash(["[]", "()", "[", "("]),   //是否需要补上[, ], (, )
-  	TERNARY : array_to_hash(["?:"], "?")
+  	TERNARY : array_to_hash(["?"])
 };
 
 var PRECEDENCE = {
@@ -1552,7 +1562,7 @@ var PRECEDENCE = {
 			 "()": 15,
 			 "(": 15
 			},
-	TERNARY:{"?:":2,
+	TERNARY:{
 			 "?":2
 			}
 };
