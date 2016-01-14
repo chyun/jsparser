@@ -1,6 +1,6 @@
 var rf = require("fs");
 var parser = require('./parser.js').parser;
-var data = rf.readFileSync("test/issue4.js","utf-8");
+var data = rf.readFileSync("test/fourSum.js","utf-8");
 
 var parser = new parser(data);
 

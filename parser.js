@@ -722,6 +722,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		var left = null;
 		var token = tq.peek();
 		var opprec;
+		debugger;
 		if (operatorType.PREFIX[token.value] !== undefined) {
 			var op = token;
 			//handl prefix operator
@@ -754,8 +755,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		}
 		
 		//Parse binary operators, except comma
-		var prevOp = null; //纪录前一个二元操作符
-		var prevOpprec = -1;
 		var op = null;
 		while (!tq.isEmpty()) {
 			token = tq.peek();
@@ -780,13 +779,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			if (!(opprec > precedence)) {
 				break;
 			}
-			debugger;
-			if (prevOpprec == opprec && leftAct[token.value]) {
-				break;
-			}
 			
 			op = token;
-			prevOpprec = opprec; //纪录前一个当前op的优先级
 			tq.advance();  // Consume the operator token
 
 			var right;
@@ -858,7 +852,6 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			}
 		}
 		return left;
-
 	}
 
 
@@ -1007,8 +1000,8 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 								}
 								properties.push(prop);
 								sawComma = tq.checkToken(punctuation.COMMA);
+								debugger;
 								if (sawComma && tq.lookaheadToken(punctuation.RCURLY)) {
-									tq.advance();
 									break;
 								}
 							} while (sawComma);
@@ -1102,7 +1095,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
     	if (semicolonInserted()) {
     		//do something
 	    } else {
-	        tq.parse_error("Absent of semicolon");
+	        parse_error("Absent of semicolon");
 	    }
 	}
 
