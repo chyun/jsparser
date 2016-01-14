@@ -928,6 +928,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 						return e;
 					case punctuation.LSQUARE: {
 						var elements = [];
+						tq.advance();
 						if (!tq.checkToken(punctuation.RSQUARE)) {
 							do {
 								// Handle adjacent commas that specify undefined values.
@@ -937,11 +938,11 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
                 					elements.push(v1);
                 				}
                 				if (tq.lookaheadToken(punctuation.RSQUARE)) { break; }
-                				elements.push(parseExpression(false));
+                				elements.push(parseExpressionPart(false));
 							} while (tq.checkToken(punctuation.COMMA));
 							tq.expectToken(punctuation.RSQUARE);
 						}
-						e = new ArrayConstructor(elements);
+						e = new arrayConstructor(elements);
 						break;
 					}
 					case punctuation.LCURLY: {

@@ -6,8 +6,8 @@ var fourSum = function(nums, target) {
 	console.log(array);
 	for (var i = 0; i < array.length - 3; i++) {
 		if (i > 0 && array[i] == array[i-1])
-                continue;
-		for (var j = i + 1; j < array.length - 2; j++) {
+            continue;
+	 	for (var j = i + 1; j < array.length - 2; j++) {
 			if (j > i + 1 && array[j] == array[j-1])
                 continue;
             var k = j + 1;
@@ -40,9 +40,9 @@ var fourSum = function(nums, target) {
                 } else if (sum < target)
                     k++;
                 else
-                    t--;                        
+                    t--;
             }
-		}
+	 	}
 	}
 	return rets;
 };
