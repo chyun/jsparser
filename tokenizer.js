@@ -1,3 +1,9 @@
+var util_module = require('./util.js');
+var array_to_hash = util_module.array_to_hash;
+var HOP = util_module.HOP;
+var parse_error = util_module.parse_error;
+var slice = util_module.slice;
+
 var KEYWORDS = array_to_hash([
     "break",
     "case",
@@ -194,21 +200,6 @@ function parse_js_number(num) {
     }
 };
 
-function JS_Parse_Error(message, line, col, pos) {
-    this.message = message;
-    this.line = line + 1;
-    this.col = col + 1;
-    this.pos = pos + 1;
-    this.stack = new Error().stack;
-};
-
-JS_Parse_Error.prototype.toString = function() {
-    return this.message + " (line: " + this.line + ", col: " + this.col + ", pos: " + this.pos + ")" + "\n\n" + this.stack;
-};
-
-function js_error(message, line, col, pos) {
-    throw new JS_Parse_Error(message, line, col, pos);
-};
 
 function is_token(token, type, val) {
     return token.type == type && (val == null || token.value == val);
@@ -230,6 +221,7 @@ function tokenizer($TEXT) {
         regex_allowed   : false,
         comments_before : []
     };
+    debugger;
 
     //获取当前游标位置的字符
     function peek() { return S.text.charAt(S.pos); };
@@ -305,10 +297,6 @@ function tokenizer($TEXT) {
         return ret;
     };
 
-    function parse_error(err) {
-        js_error(err, S.tokline, S.tokcol, S.tokpos);
-    };
-
     function read_num(prefix) {
         var has_e = false, after_e = false, has_x = false, has_dot = prefix == ".";
         var num = read_while(function(ch, i){
@@ -373,6 +361,7 @@ function tokenizer($TEXT) {
 
     function read_string() {
         return with_eof_error("Unterminated string constant", function(){
+            debugger;
             var quote = next(), ret = "";
             for (;;) {
                 var ch = next(true);
@@ -547,6 +536,7 @@ function tokenizer($TEXT) {
         var ch = peek();
         if (!ch) return token("eof");
         if (is_digit(ch)) return read_num();
+        debugger;
         if (ch == '"' || ch == "'") return read_string();
         if (HOP(PUNC_CHARS, ch)) return token("punc", next());
         if (ch == ".") return handle_dot();
@@ -564,108 +554,12 @@ function tokenizer($TEXT) {
     return next_token;
 };
 
-function curry(f) {
-    var args = slice(arguments, 1);
-    return function() { return f.apply(this, args.concat(slice(arguments))); };
-};
-
-function prog1(ret) {
-    if (ret instanceof Function)
-        ret = ret();
-    for (var i = 1, n = arguments.length; --n > 0; ++i)
-        arguments[i]();
-    return ret;
-};
-
-function array_to_hash(a) {
-    var ret = {};
-    for (var i = 0; i < a.length; ++i)
-        ret[a[i]] = true;
-    return ret;
-};
-
-function slice(a, start) {
-    return Array.prototype.slice.call(a, start || 0);
-};
-
 function characters(str) {
     return str.split("");
 };
 
-function member(name, array) {
-    for (var i = array.length; --i >= 0;)
-        if (array[i] == name)
-            return true;
-    return false;
-};
-
-function HOP(obj, prop) {
-    return Object.prototype.hasOwnProperty.call(obj, prop);
-};
-
 var warn = function() {};
-
-var UNARY_PREFIX = array_to_hash([
-    "typeof",
-    "void",
-    "delete",
-    "--",
-    "++",
-    "!",
-    "~",
-    "-",
-    "+"
-]);
 
 var UNARY_POSTFIX = array_to_hash([ "--", "++" ]);
 
-var ASSIGNMENT = (function(a, ret, i){
-    while (i < a.length) {
-        ret[a[i]] = a[i].substr(0, a[i].length - 1);
-        i++;
-    }
-    return ret;
-})(
-    ["+=", "-=", "/=", "*=", "%=", ">>=", "<<=", ">>>=", "|=", "^=", "&="],
-    { "=": true },
-    0
-);
-
-var PRECEDENCE = (function(a, ret){
-    for (var i = 0, n = 1; i < a.length; ++i, ++n) {
-        var b = a[i];
-        for (var j = 0; j < b.length; ++j) {
-            ret[b[j]] = n;
-        }
-    }
-    return ret;
-})(
-    [
-        ["||"],
-        ["&&"],
-        ["|"],
-        ["^"],
-        ["&"],
-        ["==", "===", "!=", "!=="],
-        ["<", ">", "<=", ">=", "in", "instanceof"],
-        [">>", "<<", ">>>"],
-        ["+", "-"],
-        ["*", "/", "%"]
-    ],
-    {}
-);
-
-var STATEMENTS_WITH_LABELS = array_to_hash([ "for", "do", "while", "switch" ]);
-
-//一个表达式的开始，有可能以new开头, 有可能以关键字开头, 也有可能以下面这些类型的token开头
-var ATOMIC_START_TOKEN = array_to_hash([ "atom", "num", "string", "regexp", "name" ]);
-
 exports.tokenizer = tokenizer;
-
-// var input = tokenizer('3.4');
-// while (!!(s = input())) {
-//     if (s.value == undefined) {
-//         break;
-//     }
-//     console.log(s);
-// }

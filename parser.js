@@ -1,12 +1,11 @@
 var tokenizer_module = require('./tokenizer.js');
+var util_module = require('./util.js');
 
 var tokenizer = tokenizer_module.tokenizer;
+var array_to_hash = util_module.array_to_hash;
+var parse_error = util_module.parse_error;
 
-var RE_HEX_NUMBER = /^0x[0-9a-f]+$/i;
-var RE_OCT_NUMBER = /^0[0-7]+$/;
-var RE_DEC_NUMBER = /^\d*\.?\d*(?:e[+-]?\d*(?:\d\.?|\.?\d)\d*)?$/i;
-
-var punctuation = {
+var PUNCTUATION = {
 	BANG         :"!",
   	BANG_EQ      :"!=",
     BANG_EQ_EQ   :"!==",
@@ -62,7 +61,7 @@ var punctuation = {
     SLASH_EQ     :"/="
 }
 
-var tokenType = {
+var TOKEN_TYPE = {
 	COMMENT     :"comment",  //分词器中貌似没有这种类型
 	STRING      :"string",
 	REGEXP      :"regexp",
@@ -72,139 +71,10 @@ var tokenType = {
 	KEYWORD     :"keyword",
     OPETATOR    :"operator",
     ATOM        :"atom",
-    LINE_CONTINUATION : ""   //分词器中貌似没有这种类型
+    LINE_CONTINUATION : ""   //由于是nodejs写的, nodejjs会自动认出这个LINE_CONTINUATION, 而把它处理掉, 因此该分词器中没有这种类型
 }
 
-var array_to_hash = function (a) {
-    var ret = {};
-    for (var i = 0; i < a.length; ++i)
-        ret[a[i]] = true;
-    return ret;
-}
-
-var KEYWORDS = array_to_hash([
-    "break",
-    "case",
-    "catch",
-    "class",
-    "const",
-    "continue",
-    "debugger",
-    "default",
-    "delete",
-    "do",
-    "else",
-    "enum",
-    "export",
-    "extends",
-    "false",
-    "finally",
-    "for",
-    "function",
-    "if",
-    "implements",
-    "import",
-    "in",
-    "instanceof",
-    "interface",
-    "let",
-    "new",
-    "null",
-    "package",
-    "private",
-    "protected",
-    "public",
-    "return",
-    "static",
-    "super",
-    "switch",
-    "this",
-    "throw",
-    "true",
-    "try",
-    "typeof",
-    "var",
-    "void",
-    "while",
-    "with",
-    "yield"
-]);
-
-var RESERVED_WORDS = array_to_hash([
-    "abstract",
-    "boolean",
-    "byte",
-    "char",
-    "class",
-    "double",
-    "enum",
-    "export",
-    "extends",
-    "final",
-    "float",
-    "goto",
-    "implements",
-    "import",
-    "int",
-    "interface",
-    "long",
-    "native",
-    "package",
-    "private",
-    "protected",
-    "public",
-    "short",
-    "static",
-    "super",
-    "synchronized",
-    "throws",
-    "transient",
-    "volatile"
-]);
-
-function parse_js_number(num) {
-    if (RE_HEX_NUMBER.test(num)) {
-        return parseInt(num.substr(2), 16);
-    } else if (RE_OCT_NUMBER.test(num)) {
-        return parseInt(num.substr(1), 8);
-    } else if (RE_DEC_NUMBER.test(num)) {
-        return parseFloat(num);
-    }
-};
-
-function JS_Parse_Error(message, line, col, pos) {
-    this.message = message;
-    this.line = line + 1;
-    this.col = col + 1;
-    this.pos = pos + 1;
-    this.stack = new Error().stack;
-};
-
-JS_Parse_Error.prototype.toString = function() {
-    return this.message + " (line: " + this.line + ", col: " + this.col + ", pos: " + this.pos + ")" + "\n\n" + this.stack;
-};
-
-function js_error(message, line, col, pos) {
-    throw new JS_Parse_Error(message, line, col, pos);
-};
-
-var parser = function($TEXT, exigent_mode, embed_tokens) {
-
-	var S = {
-        input         : typeof $TEXT == "string" ? tokenizer($TEXT, true) : $TEXT,
-        token         : null,
-        prev          : null,
-        peeked        : null,
-        in_function   : 0,
-        in_directives : true,
-        in_loop       : 0,              //标记第几层嵌套
-        labels        : []
-    };
-
-    var parse_error = function (err) {
-    	var token = tq.peek();
-        js_error(err, token.line, token.col, token.pos);
-    };
+var parser = function($TEXT, exigent_mode) {
 
     var tq = {
     	input         : typeof $TEXT == "string" ? tokenizer($TEXT, true) : $TEXT,
@@ -300,18 +170,18 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	
 	var parseProgramOrFunctionBody = function (requireBrackets) {
 		if (requireBrackets) {
-			tq.expectToken(punctuation.LCURLY); 
+			tq.expectToken(PUNCTUATION.LCURLY); 
 		}
 		var stmts = [];
 		var prologue = parseDirectivePrologue();
 		if (prologue != null) {
 			stmts.push(prologue);
 		}
-		while (!tq.isEmpty() && !tq.lookaheadToken(punctuation.RCURLY)) {
+		while (!tq.isEmpty() && !tq.lookaheadToken(PUNCTUATION.RCURLY)) {
 	        stmts.push(parseTerminatedStatement());
 	    }
 	    if (requireBrackets) {
-	    	tq.expectToken(punctuation.RCURLY);
+	    	tq.expectToken(PUNCTUATION.RCURLY);
 	    }
 	    return stmts;
 	}
@@ -325,12 +195,12 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseStatement = function() {
 		var currToken = tq.peek();
 		// look for any labels preceding statement
-		if (tokenType.NAME == currToken.type) {
+		if (TOKEN_TYPE.NAME == currToken.type) {
 			var label = parseIdentifier(false);
-			if (tq.checkToken(punctuation.COLON)) {
+			if (tq.checkToken(PUNCTUATION.COLON)) {
 				var t = tq.peek();
 			    var s; //statement
-				if (tokenType.KEYWORD == t.type) {
+				if (TOKEN_TYPE.KEYWORD == t.type) {
 		            switch (t.value) {
 			            case "for": case "do": case "while": case "switch":
 			                s = parseLoopOrSwitch();
@@ -353,7 +223,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseStatementWithoutLabel = function() {
 		var token = tq.peek();
-		if (tokenType.KEYWORD == token.type) {
+		if (TOKEN_TYPE.KEYWORD == token.type) {
 			var s;
 			switch (token.value) {
 				case 'for': case 'do': case 'while': case 'switch':
@@ -365,9 +235,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          		var sawElse;
 	          		var elseClause = null;
 	          		do {
-	          			tq.expectToken(punctuation.LPAREN);
+	          			tq.expectToken(PUNCTUATION.LPAREN);
 	          			var cond = parseExpression(false);
-	          			tq.expectToken(punctuation.RPAREN);
+	          			tq.expectToken(PUNCTUATION.RPAREN);
 	          			var body = parseBody();
 	          			sawElse = tq.checkToken('else');
 	          			var ifClause = new ifClauseStatement(cond, body);
@@ -384,14 +254,14 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          		return parseDeclarationsOrExpression(true);
 	          	case 'function': {
 	          		tq.advance();
-	          		if (tq.lookaheadToken(punctuation.LPAREN)) {
+	          		if (tq.lookaheadToken(PUNCTUATION.LPAREN)) {
 	          			// If no name, then treat it as an expression, probably a lambda
 	          			return parseExpressionStmt(true);
 	          		} else {
 	          			var idfNode = parseIdentifierNode(false);
-	          			tq.expectToken(punctuation.LPAREN);
+	          			tq.expectToken(PUNCTUATION.LPAREN);
 	          			var params = parseFormalParams();
-	          			tq.expectToken(punctuation.RPAREN);
+	          			tq.expectToken(PUNCTUATION.RPAREN);
 	          			var body = parseFunctionBody();
 	          			//var fc = new functionConstructor(idfNode.name, params, body);
 	          			s = new functionDeclaration(idfNode.name, params, body);
@@ -403,7 +273,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          		var value;
 	          		// Check for semicolon insertion without lookahead since return is a
 	          		// restricted production. See the grammar above and ES3 or ES5 S7.9.1
-	          		if (semicolonInserted() || tq.lookaheadToken(punctuation.SEMI)) {
+	          		if (semicolonInserted() || tq.lookaheadToken(PUNCTUATION.SEMI)) {
 	          			value = null;
 	          		} else {
 	          			value = parseExpression(true);
@@ -414,7 +284,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          	case 'break': {
 	          		tq.advance();
 	          		var targetLabel = "";
-	          		if (!semicolonInserted() && tokenType.NAME == tq.peek().type) {
+	          		if (!semicolonInserted() && TOKEN_TYPE.NAME == tq.peek().type) {
 	            		targetLabel = parseIdentifier(false);
 	          		}
 	          		s = new breakStatement(targetLabel);
@@ -423,7 +293,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          	case 'continue': {
 	          		tq.advance();
 	          		var targetLabel = "";
-	          		if (!semicolonInserted() && tokenType.NAME == tq.peek().type) {
+	          		if (!semicolonInserted() && TOKEN_TYPE.NAME == tq.peek().type) {
 	            		targetLabel = parseIdentifier(false);
 			        }
 			        s = new continueStatement(targetLabel);
@@ -453,10 +323,10 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	            		handler = null;
 	          		} else {
 	          			tq.expectToken('catch');
-	            		tq.expectToken(punctuation.LPAREN);
+	            		tq.expectToken(PUNCTUATION.LPAREN);
 	            		var idfName = parseIdentifier(false);
 	            		var exvar = new declaration(idfName, null);
-	            		tq.expectToken(punctuation.RPAREN);
+	            		tq.expectToken(PUNCTUATION.RPAREN);
 	            		var catchBody = parseBody();
 	            		handler = new catchStatement(exvar, catchBody);
 	            		sawFinally = tq.checkToken('finally');
@@ -471,9 +341,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	          	}
 	          	case 'with': {
 	          		tq.advance();
-	          		tq.expectToken(punctuation.LPAREN);
+	          		tq.expectToken(PUNCTUATION.LPAREN);
 	          		var scopeObject = parseExpression(false);
-	          		tq.expectToken(punctuation.RPAREN);
+	          		tq.expectToken(PUNCTUATION.RPAREN);
 	          		var body = parseBody();
 	          		s = new withStatement(scopeObject, body);
 	          		break;
@@ -483,14 +353,14 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
           	}
           	return s;
 		} else {
-			if (tq.checkToken(punctuation.LCURLY)) {
+			if (tq.checkToken(PUNCTUATION.LCURLY)) {
 				var stmts = [];
-				while (!tq.checkToken(punctuation.RCURLY)) {
+				while (!tq.checkToken(PUNCTUATION.RCURLY)) {
         			stmts.push(parseTerminatedStatement());
       			}
       			var block = new blockStatement(stmts);
       			return block;
-			} else if (tq.checkToken(punctuation.SEMI)) {
+			} else if (tq.checkToken(PUNCTUATION.SEMI)) {
 				return new noopStatement();
 			} else {
 				return parseExpressionStmt(true);
@@ -527,12 +397,12 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	}
 
 	var parseSwitchStmt = function() {
-		tq.expectToken(punctuation.LPAREN);
+		tq.expectToken(PUNCTUATION.LPAREN);
 		var switchValue = parseExpression(false);
-		tq.expectToken(punctuation.RPAREN);
-        tq.expectToken(punctuation.LCURLY);
+		tq.expectToken(PUNCTUATION.RPAREN);
+        tq.expectToken(PUNCTUATION.LCURLY);
         var cases = [];
-        while (!tq.checkToken(punctuation.RCURLY)) {
+        while (!tq.checkToken(PUNCTUATION.RCURLY)) {
         	var caseValue = null;
         	if (tq.checkToken('default')) {
 	            caseValue = null;
@@ -540,11 +410,11 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	        	tq.expectToken('case');
 	        	caseValue = parseExpression(false);
 	        }
-	        tq.expectToken(punctuation.COLON);
+	        tq.expectToken(PUNCTUATION.COLON);
 	        var caseBodyContents = [];
 	        while (!(tq.lookaheadToken('default')
                    || tq.lookaheadToken('case')
-                   || tq.lookaheadToken(punctuation.RCURLY))) {
+                   || tq.lookaheadToken(PUNCTUATION.RCURLY))) {
             	caseBodyContents.push(parseTerminatedStatement());
           	}
           	var cs = new caseStatement(caseValue, caseBodyContents);
@@ -558,32 +428,32 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseDoWhileStmt = function() {
 		var body = parseBody();
 		tq.expectToken('while');
-        tq.expectToken(punctuation.LPAREN);
+        tq.expectToken(PUNCTUATION.LPAREN);
         var cond = parseExpression(false);
-        tq.expectToken(punctuation.RPAREN);
+        tq.expectToken(PUNCTUATION.RPAREN);
         var s = new doWhileStmt(body, cond);
         return s;
 	}
 
 	var parseWhileStmt = function() {
-		tq.expectToken(punctuation.LPAREN);
+		tq.expectToken(PUNCTUATION.LPAREN);
 		var cond = parseExpression(false);
-		tq.expectToken(punctuation.RPAREN);
+		tq.expectToken(PUNCTUATION.RPAREN);
 		var body = parseBody();
 		var s = new whileStatement(cond, body);
 		return s;
 	}
 
 	var parseForStatement = function() {
-		tq.expectToken(punctuation.LPAREN);
+		tq.expectToken(PUNCTUATION.LPAREN);
 		var e;
-		if (tq.checkToken(punctuation.SEMI)) {
+		if (tq.checkToken(PUNCTUATION.SEMI)) {
 			var initializer = new noopStatement();
 			var condition = parseExpressionOrNoop(false);
 			var increment;
-			if (!tq.checkToken(punctuation.RPAREN)) {
+			if (!tq.checkToken(PUNCTUATION.RPAREN)) {
 				increment = parseExpression(false);
-				tq.expectToken(punctuation.RPAREN);
+				tq.expectToken(PUNCTUATION.RPAREN);
 			} else {
 				increment = new noopStatement();
 			}
@@ -593,21 +463,21 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			var initializer = parseDeclarationsOrExpression(false);
 			if (tq.checkToken('in')) {
 				var iterable = parseExpression(false);
-				tq.expectToken(punctuation.RPAREN);
+				tq.expectToken(PUNCTUATION.RPAREN);
 				var body = parseBody();
 				e = new forInStatement(initializer, iterable, body);
 			} else if(tq.checkToken('of')){
 				var iterable = parseExpression(false);
-				tq.expectToken(punctuation.RPAREN);
+				tq.expectToken(PUNCTUATION.RPAREN);
 				var body = parseBody();
 				e = new forOfStatement(initializer, iterable, body);
 			} else {
-				tq.expectToken(punctuation.SEMI);
+				tq.expectToken(PUNCTUATION.SEMI);
 				var condition = parseExpressionOrNoop(false);
 				var increment;
-				if (!tq.checkToken(punctuation.RPAREN)) {
+				if (!tq.checkToken(PUNCTUATION.RPAREN)) {
 					increment = parseExpressionStmt(true);
-              		tq.expectToken(punctuation.RPAREN);
+              		tq.expectToken(PUNCTUATION.RPAREN);
 				} else {
 					increment = new  noopStatement();
 				}
@@ -630,23 +500,23 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		if (isDeclaration) {
 			var idNode = parseIdentifierNode(false);
 			var initializer = null;
-			if (tq.checkToken(punctuation.EQ)) {
+			if (tq.checkToken(PUNCTUATION.EQ)) {
 	            initializer = parseExpression(insertCommaAllowed);
 	        }
 	        var d = new declaration(idNode, initializer);
 	        var st;
-	        if (tq.checkToken(punctuation.COMMA)) {
+	        if (tq.checkToken(PUNCTUATION.COMMA)) {
 	        	var decls = [];
 	        	decls.push(d);
 	        	do {
 	        		idNode = parseIdentifierNode(false);
 	        		initializer = null;
-	        		if (tq.checkToken(punctuation.EQ)) {
+	        		if (tq.checkToken(PUNCTUATION.EQ)) {
 			            initializer = parseExpression(insertCommaAllowed);
 			        }
 			        d = new declaration(idNode, initializer);
 			        decls.push(d);
-	        	} while (tq.checkToken(punctuation.COMMA));
+	        	} while (tq.checkToken(PUNCTUATION.COMMA));
 	        	st = new multiDeclarations(decls);
 	        } else {
 	        	st = d;
@@ -666,15 +536,15 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	var parseBody = function() {
 		var s;
 		var stmts = [];
-		var requireBrackets = tq.lookaheadToken(punctuation.LCURLY);
+		var requireBrackets = tq.lookaheadToken(PUNCTUATION.LCURLY);
 		//存在花括号
 		if (requireBrackets) {
-			tq.expectToken(punctuation.LCURLY);
-			while (!tq.isEmpty() && !tq.lookaheadToken(punctuation.RCURLY)) {
+			tq.expectToken(PUNCTUATION.LCURLY);
+			while (!tq.isEmpty() && !tq.lookaheadToken(PUNCTUATION.RCURLY)) {
 				stmts.push(parseTerminatedStatement());
 			}
 			s = new blockStatement(stmts);
-			tq.expectToken(punctuation.RCURLY);
+			tq.expectToken(PUNCTUATION.RCURLY);
 			return s;
 		} else {
 			if (!tq.isEmpty()) {
@@ -687,30 +557,27 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseExpressionOrNoop = function(insertCommaAllowed) {
 		//若直接; 条件表达式该是true
-		if (tq.checkToken(punctuation.SEMI)) {
+		if (tq.checkToken(PUNCTUATION.SEMI)) {
 	        //finish(def, m);
 	        var literal = new booleanLiteral(true);
 	        return literal;
 	    } else {
 	    	var e = parseExpression(insertCommaAllowed);
-    		tq.expectToken(punctuation.SEMI);
+    		tq.expectToken(PUNCTUATION.SEMI);
     		return e;
 	    }
 	}
 
 	var parseExpression = function(insertCommaAllowed) {
-		//var token = tq.pop();
 		var exp = parseOp(-1, insertCommaAllowed);
 
-		if (tq.checkToken(punctuation.COMMA)) {
-			//var exps = new sequenceExpression();
+		if (tq.checkToken(PUNCTUATION.COMMA)) {
 			var exps = [];
 			exps.push(exp);
 			do {
 				var right = parseExpression(insertCommaAllowed);
 				exps.push(right);
-				//var e = 
-			} while (tq.checkToken(punctuation.COMMA));
+			} while (tq.checkToken(PUNCTUATION.COMMA));
 			var sequence = new sequenceExpression(exps);
 			return sequence;
 		}
@@ -723,7 +590,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		var token = tq.peek();
 		var opprec;
 		debugger;
-		if (operatorType.PREFIX[token.value] !== undefined) {
+		if (OPERATOR_TYPE.PREFIX[token.value] !== undefined) {
 			var op = token;
 			//handl prefix operator
 			tq.advance();
@@ -733,14 +600,14 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			} else {
 				parse_error('parse prefix operator error!');
 			}
-			if (op.value == 'new' && tq.checkToken(punctuation.LPAREN)) {
+			if (op.value == 'new' && tq.checkToken(PUNCTUATION.LPAREN)) {
 				var operands = [];
 				var currCallee = left;
-				if (!tq.checkToken(punctuation.RPAREN)) {
+				if (!tq.checkToken(PUNCTUATION.RPAREN)) {
 					do {
               			operands.push(parseExpression(false));
-            		} while (tq.checkToken(punctuation.COMMA));
-            		tq.expectToken(punctuation.RPAREN);
+            		} while (tq.checkToken(PUNCTUATION.COMMA));
+            		tq.expectToken(PUNCTUATION.RPAREN);
 				}
 				left = new newExpression(currCallee, operands);
 			} else {
@@ -761,15 +628,15 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			
 			// If it is a binary op then we should consider using it
 			//操作符优先级
-			if (punctuation.COMMA == token.value) {
+			if (PUNCTUATION.COMMA == token.value) {
 				break;
-			} else if ((operatorType.INFIX)[token.value]) {
+			} else if ((OPERATOR_TYPE.INFIX)[token.value]) {
 				opprec = (PRECEDENCE.INFIX)[token.value];
-			} else if ((operatorType.BRACKET)[token.value]) {
+			} else if ((OPERATOR_TYPE.BRACKET)[token.value]) {
 				opprec = (PRECEDENCE.BRACKET)[token.value];
-			} else if ((operatorType.TERNARY)[token.value]) {
+			} else if ((OPERATOR_TYPE.TERNARY)[token.value]) {
 				opprec = (PRECEDENCE.TERNARY)[token.value];
-			} else if ((operatorType.POSTFIX)[token.value]) {
+			} else if ((OPERATOR_TYPE.POSTFIX)[token.value]) {
 				opprec = (PRECEDENCE.POSTFIX)[token.value];
 			} else {
 				break;
@@ -786,26 +653,26 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 			var right;
 			try {
 				// Recurse to parse operator arguments.
-				if ((operatorType.BRACKET)[op.value]) {
+				if ((OPERATOR_TYPE.BRACKET)[op.value]) {
 					//函数调用
-					if (punctuation.LPAREN == op.value) {
+					if (PUNCTUATION.LPAREN == op.value) {
 						var params = [];
-						if (!tq.checkToken(punctuation.RPAREN)) {
+						if (!tq.checkToken(PUNCTUATION.RPAREN)) {
 							do {
 								params.push(parseExpression(false));
-							} while (tq.checkToken(punctuation.COMMA));
-							tq.expectToken(punctuation.RPAREN);
+							} while (tq.checkToken(PUNCTUATION.COMMA));
+							tq.expectToken(PUNCTUATION.RPAREN);
 						}
 						//关于函数的调用操作符再思考一下
 						right = new actualList(params);
 					} else {
 						right = parseExpression(false);
 						//其实这边不一定是中括号,也有可能是小括号
-						tq.expectToken(punctuation.RSQUARE);
+						tq.expectToken(PUNCTUATION.RSQUARE);
 					}
-				} else if ((operatorType.POSTFIX)[op.value]) {
+				} else if ((OPERATOR_TYPE.POSTFIX)[op.value]) {
 					right = null;
-				} else if ((operatorType.TERNARY)[op.value]) {
+				} else if ((OPERATOR_TYPE.TERNARY)[op.value]) {
 					right = parseExpression(false);
 				} else if (op.value == '.') {
 					right = parseReference(true);
@@ -816,22 +683,22 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				parse_error('parse_error!');
 			}
 
-			if ((operatorType.TERNARY)[op.value]) {
+			if ((OPERATOR_TYPE.TERNARY)[op.value]) {
 				tq.expectToken(":");
 				var farRight = parseExpression(false);
 				left = new conditionalExpression(left, right, farRight);
-			} else if ((operatorType.BRACKET)[op.value]) {
+			} else if ((OPERATOR_TYPE.BRACKET)[op.value]) {
 				//函数调用的情况,需要解析
-				if (op.value == punctuation.LPAREN) {
+				if (op.value == PUNCTUATION.LPAREN) {
 					left = new callExpression(left, right);
 				} else {
 					//左方括号
 					left = new memberExpression('[]', left, right);
 				}
-			} else if ((operatorType.POSTFIX)[op.value]) {
+			} else if ((OPERATOR_TYPE.POSTFIX)[op.value]) {
 				left = new postfixExpression(op.value, left);
-			} else if ((operatorType.INFIX)[op.value]) {
-				if(op.value == punctuation.COMMA) {
+			} else if ((OPERATOR_TYPE.INFIX)[op.value]) {
+				if(op.value == PUNCTUATION.COMMA) {
 					if (left.type == 'sequenceExpression') {
 						left.append(right);
 					} else {
@@ -840,10 +707,10 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 						se.append(right);
 						left = se;
 					}
-				} else if(op.value == punctuation.EQ) {
+				} else if(op.value == PUNCTUATION.EQ) {
 					left = new assignmentExpression(op.value, left, right);
-				} else if (op.value === punctuation.DOT){
-					left = new memberExpression(punctuation.DOT, left, right);
+				} else if (op.value === PUNCTUATION.DOT){
+					left = new memberExpression(PUNCTUATION.DOT, left, right);
 				} else {
 					left = new binaryExpression(op.value, left, right);
 				}
@@ -859,19 +726,19 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		var e;
 		var token = tq.peek();
 		typeswitch: switch (token.type) {
-			case tokenType.STRING:
+			case TOKEN_TYPE.STRING:
 				e = new stringLiteral(token.value);
 				tq.advance();
 				break;
-			case tokenType.NUM:
+			case TOKEN_TYPE.NUM:
 				e = new numberLiteral(token.value);
 				tq.advance();
 				break;
-			case tokenType.REGEXP:
+			case TOKEN_TYPE.REGEXP:
 				e = new regexpLiteral(token.value);
 				tq.advance();
 				break;
-			case tokenType.KEYWORD: {
+			case TOKEN_TYPE.KEYWORD: {
 				var kword = token.value;
 				switch (kword) {
 					case "null":
@@ -890,15 +757,15 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
               		case "function": {
               			tq.advance();
               			var idf;
-              			if (!tq.isEmpty() && tokenType.NAME == tq.peek().type) {
+              			if (!tq.isEmpty() && TOKEN_TYPE.NAME == tq.peek().type) {
               				idf = parseIdentifierNode(false);
               			} else {
               				idf = new identifier(null);
               			}
               			
-              			tq.expectToken(punctuation.LPAREN);
+              			tq.expectToken(PUNCTUATION.LPAREN);
               			var params = parseFormalParams();
-              			tq.expectToken(punctuation.RPAREN);
+              			tq.expectToken(PUNCTUATION.RPAREN);
               			var body = parseFunctionBody();
               			e = new functionConstructor(idf.name, params, body);
               			break typeswitch;
@@ -907,7 +774,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
               			break;   // Will be handled by the word handler below
 				}
 			}
-			case tokenType.NAME: {
+			case TOKEN_TYPE.NAME: {
 				var idfName;
 				if ("this" == token.value) {
 					idfName = "this";
@@ -919,45 +786,45 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 				e = new reference(idf);
 				break;
 			}
-			case tokenType.PUNCTUATION: {
+			case TOKEN_TYPE.PUNCTUATION: {
 				switch (token.value) {
-					case punctuation.LPAREN:
-						tq.expectToken(punctuation.LPAREN);
+					case PUNCTUATION.LPAREN:
+						tq.expectToken(PUNCTUATION.LPAREN);
 						e = parseExpression(false);
-						tq.expectToken(punctuation.RPAREN);
+						tq.expectToken(PUNCTUATION.RPAREN);
 						return e;
-					case punctuation.LSQUARE: {
+					case PUNCTUATION.LSQUARE: {
 						var elements = [];
 						tq.advance();
-						if (!tq.checkToken(punctuation.RSQUARE)) {
+						if (!tq.checkToken(PUNCTUATION.RSQUARE)) {
 							do {
 								// Handle adjacent commas that specify undefined values.
                 				// E.g. [1,,2]
-                				while (tq.checkToken(punctuation.COMMA)) {
+                				while (tq.checkToken(PUNCTUATION.COMMA)) {
                 					var v1 = new elision();
                 					elements.push(v1);
                 				}
-                				if (tq.lookaheadToken(punctuation.RSQUARE)) { break; }
+                				if (tq.lookaheadToken(PUNCTUATION.RSQUARE)) { break; }
                 				elements.push(parseExpressionPart(false));
-							} while (tq.checkToken(punctuation.COMMA));
-							tq.expectToken(punctuation.RSQUARE);
+							} while (tq.checkToken(PUNCTUATION.COMMA));
+							tq.expectToken(PUNCTUATION.RSQUARE);
 						}
 						e = new arrayConstructor(elements);
 						break;
 					}
-					case punctuation.LCURLY: {
+					case PUNCTUATION.LCURLY: {
 						var properties = [];
 						tq.advance();
-						if (!tq.checkToken(punctuation.RCURLY)) {
+						if (!tq.checkToken(PUNCTUATION.RCURLY)) {
 							var sawComma;
 							do {
 								var prop = null;
 								token = tq.peek();
-								if (token.type == tokenType.NAME) {
+								if (token.type == TOKEN_TYPE.NAME) {
 									if ("get" == token.value ||
 										"set" == token.value) {
 										tq.advance();
-										if (!tq.checkToken(punctuation.COLON)) {
+										if (!tq.checkToken(PUNCTUATION.COLON)) {
 											//处理gretter 和 setter
 											if ("get" == token.value) {
 												prop = new getterProperty();
@@ -971,11 +838,11 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 								}
 								var key;
 								switch (token.type) {
-									case tokenType.STRING:
+									case TOKEN_TYPE.STRING:
 										tq.advance();
 										key = new stringLiteral(token.value);
 										break;
-									case tokenType.NUM:
+									case TOKEN_TYPE.NUM:
 										tq.advance();
 										key = stringLiteral(token.value);
 										break;
@@ -985,28 +852,28 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 										break;
 								}
 								if (prop == null) {
-									tq.expectToken(punctuation.COLON);
+									tq.expectToken(PUNCTUATION.COLON);
 									var value = parseExpressionPart(false);
 									prop = new objectProperty(key, value);
 								} else {
 
 									//处理getter和setter的情况
-									tq.expectToken(punctuation.LPAREN);
+									tq.expectToken(PUNCTUATION.LPAREN);
 									var params = parseFormalParams();
-									tq.expectToken(punctuation.RPAREN);
+									tq.expectToken(PUNCTUATION.RPAREN);
 									var body = parseFunctionBody();
 									var fn = new functionConstructor(key.value, params, body);
 									prop.setKey(key.value);
 									prop.setValue(fn);
 								}
 								properties.push(prop);
-								sawComma = tq.checkToken(punctuation.COMMA);
+								sawComma = tq.checkToken(PUNCTUATION.COMMA);
 								debugger;
-								if (sawComma && tq.lookaheadToken(punctuation.RCURLY)) {
+								if (sawComma && tq.lookaheadToken(PUNCTUATION.RCURLY)) {
 									break;
 								}
 							} while (sawComma);
-							tq.expectToken(punctuation.RCURLY);
+							tq.expectToken(PUNCTUATION.RCURLY);
 						}
 						e = new objectConstructor(properties);
             			break;
@@ -1035,11 +902,11 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseFormalParams = function() {
 		var params = [];
-		if (!tq.lookaheadToken(punctuation.RPAREN)) {
+		if (!tq.lookaheadToken(PUNCTUATION.RPAREN)) {
 			do {
 		        var param = new formalParam(parseIdentifier(false));
 		        params.push(param);
-		    } while (tq.checkToken(punctuation.COMMA));
+		    } while (tq.checkToken(PUNCTUATION.COMMA));
 		}
 		return params;
 	}
@@ -1060,7 +927,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		var token = tq.peek();
 		var s = token.value;
 		switch (token.type) {
-			case tokenType.NAME:
+			case TOKEN_TYPE.NAME:
 				if (!allowReservedWords) {
 		            //do some message
 		        }
@@ -1069,7 +936,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		        //    parse_error("Invalid Identifier");
 		        //}
 		        break;
-		    case tokenType.KEYWORD:
+		    case TOKEN_TYPE.KEYWORD:
 		    	if (!allowReservedWords) {
 		            parse_error("Reserved Word used as Identifier");
 		        }
@@ -1089,7 +956,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var checkSemicolon = function() {
 		// Look for a semicolon
-    	if (tq.checkToken(punctuation.SEMI)) { return; }
+    	if (tq.checkToken(PUNCTUATION.SEMI)) { return; }
 
     	// None found, so maybe do insertion.
     	if (tq.isEmpty()) { return; }
@@ -1113,9 +980,9 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 	}
 
 	var continuesExpr = function(tokenText) {
-		return operator.lookupOperation(tokenText, operatorType.INFIX) != null
-        || operator.lookupOperation(tokenText, operatorType.BRACKET) != null
-        || operator.lookupOperation(tokenText, operatorType.TERNARY) != null;
+		return operator.lookupOperation(tokenText, OPERATOR_TYPE.INFIX) != null
+        || operator.lookupOperation(tokenText, OPERATOR_TYPE.BRACKET) != null
+        || operator.lookupOperation(tokenText, OPERATOR_TYPE.TERNARY) != null;
 	}
 
 	var parseFunctionBody = function() {
@@ -1124,13 +991,13 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 
 	var parseDirectivePrologue = function() {
 		// Quick return if we are sure we will not accumulate anything
-    	if (tq.isEmpty() || tq.peek().type != tokenType.STRING) { return null; }
+    	if (tq.isEmpty() || tq.peek().type != TOKEN_TYPE.STRING) { return null; }
     	var directives = [];
 
     	//console.log(tq.peek());
-    	while(!tq.isEmpty() && tq.peek().type == tokenType.STRING) {
+    	while(!tq.isEmpty() && tq.peek().type == TOKEN_TYPE.STRING) {
 	    	var quotedToken = tq.pop();
-	    	if (!tq.checkToken(punctuation.SEMI)) {
+	    	if (!tq.checkToken(PUNCTUATION.SEMI)) {
 	    		var t = !tq.isEmpty()? tq.peek() : null;
 	    		if ((t == null || !continuesExpr(t.value)) && semicolonInserted()) {
 	    			//do some message
@@ -1158,7 +1025,7 @@ var parser = function($TEXT, exigent_mode, embed_tokens) {
 		//关于exigent_mode的判断还有待处理
 		return !exigent_mode && (
 			//nlb means new_line_before
-            tq.peek().nlb || tq.isEmpty() || tq.lookaheadToken(punctuation.RCURLY)
+            tq.peek().nlb || tq.isEmpty() || tq.lookaheadToken(PUNCTUATION.RCURLY)
         );
 	}
 
@@ -1492,12 +1359,7 @@ var sequenceExpression = function(exps) {
 	}
 }
 
-// sequenceExpression.prototype.append = function(exp) {
-// 	this.expressions.push(exp);
-// 	return this.expressions;
-// }
-
-var operatorType = {
+var OPERATOR_TYPE = {
 	PREFIX  : array_to_hash(["new", "delete", "void", "typeof", "++", "--", "+", "-", "~", "!"]),
 	POSTFIX : array_to_hash(["++", "--"]),
   	INFIX   : array_to_hash([".", "in", "*", "/", "%", "+", "-", "<<", ">>", ">>>", "<", ">", "<=", ">=", "instanceof", "==", "!=", "===", "!==",
@@ -1568,15 +1430,5 @@ var PRECEDENCE = {
 			 "?":2
 			}
 };
-
-//当前后操作符优先级相等时, 让左边的表达式优先计算
-var leftAct = array_to_hash(["[", ".", "(", "in", "*", "/", "%", "+", "-", "<<", ">>", ">>>", "<", ">", "<=", ">=",
-							 "instanceof", "==", "!=", "===", "!==", "&", "^", "|", "&&", "||", ","]);	
-
-var operator = {
-	lookupOperation   : function(symbol, type) {
-		return type[symbol];
-	}
-}
 
 exports.parser = parser;

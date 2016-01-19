@@ -1,6 +1,6 @@
 var rf = require("fs");
-var parser = require('./parser.js').parser;
-var data = rf.readFileSync("test/uglify-js.js","utf-8");
+var parser = require('../parser.js').parser;
+var data = rf.readFileSync("./unit/uglify-js.js","utf-8");
 
 var parser = new parser(data);
 
